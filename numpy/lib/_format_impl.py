@@ -456,6 +456,14 @@ def _write_array_header(fp, d, version=None):
         raise a ValueError if the format does not allow saving this data.
         Default: None
     """
+    # Coerce to plain Python types to keep entries like "np.int64(3)" out of
+    # the header, which the reader's literal_eval rejects (gh-28334).
+    d = dict(d)
+    if 'shape' in d:
+        d['shape'] = tuple(int(dim) for dim in d['shape'])
+    if 'fortran_order' in d:
+        d['fortran_order'] = bool(d['fortran_order'])
+
     header = ["{"]
     for key, value in sorted(d.items()):
         # Need to use repr here, since we eval these when reading

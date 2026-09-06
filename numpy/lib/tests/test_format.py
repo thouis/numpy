@@ -1041,3 +1041,38 @@ def test_metadata_dtype(dt):
     assert_array_equal(arr, arr2)
     assert drop_metadata(arr.dtype) is not arr.dtype
     assert drop_metadata(arr2.dtype) is arr2.dtype
+
+
+class TestNonPythonIntShape:
+    # gh-28334: open_memmap wrote NumPy scalars straight into the header, e.g.
+    # "'shape': (np.int64(2), np.int64(3))", which ast.literal_eval then
+    # rejected, making the file unreadable.
+
+    @pytest.mark.parametrize("scalar_type", [np.int8, np.int32, np.int64,
+                                             np.uint32, np.uint64, np.intp])
+    def test_open_memmap_non_python_int_shape(self, tmp_path, scalar_type):
+        fname = os.path.join(tmp_path, "memmap.npy")
+        shape = (scalar_type(2), scalar_type(3))
+
+        m = format.open_memmap(fname, mode='w+', dtype='f8', shape=shape)
+        m[...] = 1
+        m.flush()
+        del m
+
+        # Reloadable both as a plain array and as a memmap.
+        assert_array_equal(np.load(fname), np.ones((2, 3), dtype='f8'))
+        assert format.open_memmap(fname, mode='r').shape == (2, 3)
+
+    def test_open_memmap_numpy_bool_fortran_order(self, tmp_path):
+        fname = os.path.join(tmp_path, "memmap.npy")
+        expected = np.arange(6, dtype='f8').reshape(2, 3)
+
+        m = format.open_memmap(fname, mode='w+', dtype='f8', shape=(2, 3),
+                               fortran_order=np.True_)
+        m[...] = expected
+        m.flush()
+        del m
+
+        reloaded = np.load(fname)
+        assert reloaded.flags.f_contiguous
+        assert_array_equal(reloaded, expected)
